@@ -9,17 +9,13 @@ class Base(DeclarativeBase):
 class Track(Base):
     __tablename__ = "track"
 
-    # id name album_id genre
-
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column()
     genre: Mapped[str] = mapped_column() 
 
-    # tracks with album
     album_id: Mapped[str] = mapped_column(ForeignKey("album.id")) 
     album: Mapped["Album"] = relationship(back_populates="tracks")
 
-    # tracks with musician
     musician_id: Mapped[str] = mapped_column(ForeignKey("musician.id")) 
     musician: Mapped["Musician"] = relationship(back_populates="tracks")
 
@@ -28,15 +24,12 @@ class Track(Base):
 
 class Album(Base):
 
-    # id name 
     __tablename__ = "album"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column()
 
-    # album with tracks 
     tracks: Mapped[list["Track"]] = relationship(back_populates="album")
 
-    # albums with musician
     musician_id: Mapped[int] = mapped_column(ForeignKey("musician.id"))
     musician: Mapped["Musician"] = relationship(back_populates="albums")
 
@@ -45,15 +38,12 @@ class Album(Base):
 
 class Musician(Base):
 
-    # id name 
     __tablename__ = "musician"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column()
 
-    # musicians with tracks
     tracks: Mapped[list["Track"]] = relationship(back_populates="musician")
 
-    # musician with albums
     albums: Mapped[list["Album"]] = relationship(back_populates="musician")
 
 
@@ -79,8 +69,12 @@ def add_musician(Session: sessionmaker):
 def add_album(Session: sessionmaker):
     with Session() as session:
 
+        attention = input('\nОбратите внимание, что если во время добавления альбома вы укажите несуществующего музыканта, произойдет ошибка и введенные данные не сохранятся.\nВведите 1, чтобы продолжить, или 2, чтобы вернуться назад\n')
+        if attention == '2':
+            start_menu(Session)
+
         album_name = input("\nВведите название альбома: ")
-        musician_name = input("\nВведите имя музыканта: ")
+        musician_name = input("Введите имя музыканта: ")
 
         musician_stmt = select(Musician).where(Musician.name == musician_name)
         musician = session.scalars(musician_stmt).first()
@@ -97,165 +91,241 @@ def add_album(Session: sessionmaker):
 
             stmt = select(Album).where(Album.name == new_album.name)
             album = session.scalars(stmt).first()
+
             if album is not None:
                 print(f"\nАльбом {album.name} музыканта {musician.name} успешно добавлен")
 
 def add_track(Session: sessionmaker):
     with Session() as session:
         
-        name: str = input("\nВведите название трека: ")
-        genre: str = input("\nВведите жанр трека: ")
-        musician_name: str = input("\nВведите имя музыканта: ")
-        album_name: str = input("\nВведите название альбома: ")
+        attention = input('\nОбратите внимание, что если во время добавления трека вы укажите несуществующего музыканта или несуществующий альбом, произойдет ошибка и введенные данные не сохранятся.\nВведите 1, чтобы продолжить, или 2, чтобы вернуться назад\n')
+        if attention == '2':
+            start_menu(Session)
 
-        stmt = select(Album).where(Album.name == album_name)
+        name: str = input("\nВведите название трека: ")
+        genre: str = input("Введите жанр трека: ")
+        musician_name: str = input("Введите имя музыканта: ")
+        album_name: str = input("Введите название альбома: ")
+
+        stmt = select(Musician).where(Musician.name == musician_name)
+        musician = session.scalars(stmt).first()
+
+        stmt = select(Album).where(Album.name == album_name, Album.musician == musician)
         album = session.scalars(stmt).first()
 
         if album is not None:
-            print(album.musician.name)
-            stmt = select(Track).where(and_(Track.name == name, Track.genre == genre, Track.musician.name == musician_name, Track.album.name == album_name)) # есть ли ранее созданный трек с 
+            # есть ли ранее созданный трек с:
+            stmt = select(Track).where(and_(Track.name == name, Track.genre == genre, Track.album == album, Track.musician == musician))
+            
             track = session.scalars(stmt).first()
-
+            
             if track is None:
                 new_track: Track = Track(name=name, genre=genre, album_id=album.id, album=album, musician=album.musician, musician_id=album.musician.id)
                 session.add(new_track)
                 session.commit()
+                
                 stmt = select(Track).where(Track.name == name)
                 track = session.scalars(stmt).first()
 
                 if track is not None:
-                    print(f"nТрек {track.name} альбома {album.name} музыканта {album.musician.name} успешно добавлен")
+                    print(f"\nТрек {track.name} альбома {album.name} музыканта {album.musician.name} успешно добавлен")
             
             else:
+                print("такй трек уже есть")
                 print(f"\nТрек {track.name} альбома {album.name} музыканта {album.musician.name} уже есть в системе")
                 return
 
 
 def show_all_tracks(Session: sessionmaker):
     with Session() as session:
-        stmt = select(Track)
-        tracks = session.scalars(stmt).all()
-        for track in tracks:
-            print(f"\nId: {track.id}\nНазвание: {track.name}\nАльбом: {track.album.name}\nМузыкант/исполнитель: {track.musician.name}\nЖанр:{track.genre}\n")
+        stmt = select(Musician)
+        musicians = session.scalars(stmt).all()
+        for musician in musicians:
+            for album in musician.albums:
+                for track in album.tracks:
+                    print(f"\nId: {track.id}\nНазвание трека: {track.name}\nМузыкант: {musician.name}\nАльбом: {album.name}\nЖанр: {track.genre}\n")
 
 def musicians(Session: sessionmaker):
     with Session() as session:
         stmt = select(Musician)
         musicians = session.scalars(stmt).all()
-        for musician in musicians:
-            print(f"\n{musician.name}")
+        for i in range(len(musicians)):
+            print(f"{i+1}. {musicians[i].name}")
 
 def find_musician_tracks(Session: sessionmaker):
     musician_name = input("\nВведите имя музыканта: ")
     with Session() as session:
         stmt = select(Musician).where(Musician.name == musician_name)
         musician = session.scalars(stmt).first()
-        print(f"\nУ музыканта {musician.name} есть следующие треки: ")
-        for track in musician.tracks:
-            print(f"\n{track.name}")
+        if len(musician.tracks) > 0:
+            print(f"\nУ музыканта {musician.name} есть следующие треки: ")
+            for i in range(len(musician.tracks)):
+                print(f"{i+1}. {musician.tracks[i].name}")
+        else:
+            print(f"\nУ музыканта {musician.name} пока что нет добавленных треков")
 
 def find_genre_tracks(Session: sessionmaker):
     genre_name = input("\nВведите жанр: ")
     with Session() as session:
         stmt = select(Track).where(Track.genre == genre_name)
         tracks = session.scalars(stmt).all()
-        print(f"\nВ жанре {genre_name} написаны следующие треки: ")
-        for track in tracks:
-            print(f"\n{track.name}")
+        if len(tracks) > 0:
+            print(f"\nВ жанре {genre_name} написаны следующие треки: ")
+            for i in range(len(tracks)):
+                print(f"{i+1}. {tracks[i].name}")
+        else:
+            print(f"\nВ жанре {genre_name} пока что нет добавленных треков")
 
 def find_musician_albums(Session: sessionmaker):
     name = input("\nВведите имя музыканта: ")
     with Session() as session:
         stmt = select(Musician).where(Musician.name == name)
         musician = session.scalars(stmt).first()
-        print(f"\nУ музыканта {musician.name} есть следующие альбомы: ")
-        for album in musician.albums:
-            print(f"\n{album.name}")
+        if len(musician.albums) > 0:
+            print(f"\nУ музыканта {musician.name} есть следующие альбомы: ")
+            for i in range(len(musician.albums)):
+                print(f"{i+1}. {musician.albums[i].name}")
+        else:
+            print(f"\nУ музыканта {musician.name} пока что нет добавленных альбомов")
 
 def find_musician_album_tracks(Session: sessionmaker):
     musician_name = input("\nВведите имя музыканта: ")
-    album_name = input("\nВведите название альбома: ")
+    album_name = input("Введите название альбома: ")
+    album = None
+
     with Session() as session:
-        stmt = select(Album).where(and_(Album.name == album_name, Album.musician.name == musician_name))
-        album = session.scalars(stmt).first()
-        if album is not None:
-            print(f"\nВ альбоме {album_name} музыканта {musician_name} есть следующие треки: ")
-            for track in album.tracks:
-                print(f"\n{track.name}")
+        stmt = select(Musician).where(Musician.name == musician_name)
+        musician = session.scalars(stmt).first()
+        if musician is not None:
 
+            for a in musician.albums:
+                if a.name == album_name:
+                    album = a 
 
-def upgrade_track(Session: sessionmaker):
-    with Session() as session:
-        
-        musician_name: str = input("\nВведите имя музыканта: ")
-        album_name: str = input("\nВведите название альбома: ")
-        name: str = input("\nВведите название трека: ")
-
-        stmt = select(Track).where(and_(Track.name == name, Track.musician.name == musician_name, Track.album.name == album_name))
-        track = session.scalars(stmt).first()
-        
-        if track is not None:
-            new_name: str = input("\nВведите новое название трека: ")
-            new_genre: str = input("\nВведите новый жанр трека: ")
-            new_musician_name: str = input("\nВведите новое имя музыканта: ")
-            new_album_name: str = input("\nВведите новое название альбома: ")
-
-            musician_stmt = select(Musician).where(Musician.name == new_musician_name)
-            new_musician = session.scalars(musician_stmt).first()
-            stmt = select(Album).where(Album.name == new_album_name)
-            new_album = session.scalars(stmt).first()
-
-            track.name=new_name
-            track.genre=new_genre
-            track.album_id=new_album.id
-            track.album=new_album
-            track.musician=new_musician
-            track.musician_id=new_musician.id
-            session.commit()
-
-            stmt = select(Track).where(and_(Track.genre == new_genre, Track.album_id == new_album.id, Track.album == new_album, Track.musician == new_musician, Track.musician_id == new_musician.id))
-            track = session.scalars(stmt).first()
-            if track is not None:
-                print(f"\nТрек {track.name} альбома {track.album.name} музыканта {track.musician.name} успешно обновлен")
-        else:
-            print(f"\nТрек {name} альбома {album_name} музыканта {musician_name} не найден")
-
-def upgrade_album(Session: sessionmaker):
-    with Session() as session:
-
-        album_name = input("\nВведите название альбома: ")
-        musician_name = input("\nВведите имя музыканта: ")
-
-        stmt = select(Album).where(and_(Album.musician.name == musician_name, Album.name == album_name))
-        album = session.scalars(stmt).first()
-
-        if album is not None:
-            # for album in musician.albums:
-            #     if album.name == album_name:
-            #         print(f"\nАльбом {album.name} музыканта {musician.name} уже есть в системе")
-            #         return
-
-            
-
-            new_album_name = input("\nВведите новое альбома: ")
-            new_musician_name = input("\nВведите новое имя музыканта: ")
-
-            musician_stmt = select(Musician).where(Musician.name == new_musician_name)
-            new_musician = session.scalars(musician_stmt).first()
-            
-            album.name=new_album_name
-            album.musician_id=new_musician.id
-            album.musician=new_musician
-            session.commit()
-
-            stmt = select(Album).where(Album.name == new_album_name)
-            album = session.scalars(stmt).first()
             if album is not None:
-                print(f"\nАльбом {album.name} музыканта {album.musician.name} успешно добавлен")
+                if len(album.tracks) > 0:
+                    print(f"\nВ альбоме {album_name} музыканта {musician_name} есть следующие треки: ")
+                    for i in range(len(album.tracks)):
+                        print(f"{i+1}. {album.tracks[i].name}")
+                else:
+                    print(f"\nВ альбоме {album_name} музыканта {musician_name} пока что нет добавленных треков")
         else:
-            print(f"\nАльбом {album_name} музыканта {musician_name} не найден")
+            print(f"\nМузыкант {musician_name} не найден")
 
-def upgrade_musician(Session: sessionmaker):
+def update_track(Session: sessionmaker):
+    with Session() as session:
+
+        attention = input('\nОбратите внимание, что если во время изменения данных о треке вы укажите несуществующего музыканта или несуществующий альбом, произойдет ошибка и введенные данные не сохранятся.\nВведите 1, чтобы продолжить, или 2, чтобы вернуться назад\n')
+        if attention == '2':
+            start_menu(Session)
+
+        musician_name: str = input("\nВведите имя музыканта: ")
+        album_name: str = input("Введите название альбома: ")
+        name: str = input("Введите название трека: ")
+
+        stmt = select(Musician).where(and_(Musician.name == musician_name))
+        musician = session.scalars(stmt).first()
+        album = None
+
+        if musician is not None:
+            for a in musician.albums:
+                if a.name == album_name:
+                    album = a
+
+            if album is not None:
+                for t in album.tracks:
+                    if t.name == name:
+                        track = t
+
+                if track is not None:
+                    new_name: str = input("\nВведите новое название трека: ")
+                    new_genre: str = input("Введите новый жанр трека: ")
+                    new_musician_name: str = input("Введите новое имя музыканта: ")
+                    new_album_name: str = input("Введите новое название альбома: ")
+
+                    musician_stmt = select(Musician).where(Musician.name == new_musician_name)
+                    new_musician = session.scalars(musician_stmt).first()
+                    stmt = select(Album).where(Album.name == new_album_name)
+                    new_album = session.scalars(stmt).first()
+
+                    if new_musician is not None:
+                        if new_album is not None:
+                            track.name=new_name
+                            track.genre=new_genre
+                            track.album_id=new_album.id
+                            track.album=new_album
+                            track.musician=new_musician
+                            track.musician_id=new_musician.id
+                            session.commit()
+
+                            stmt = select(Track).where(and_(Track.genre == new_genre, Track.album_id == new_album.id, Track.album == new_album, Track.musician == new_musician, Track.musician_id == new_musician.id))
+                            track = session.scalars(stmt).first()
+                            if track is not None:
+                                print(f"\nТрек {track.name} альбома {track.album.name} музыканта {track.musician.name} успешно обновлен")
+                        else:
+                            print(f"Новый альбом {new_album_name} не найден")
+                    else:
+                        print(f"Новый музыкант {new_musician_name} не найден")
+                else:
+                    print(f"\nТрек для изменения {name} альбома {album_name} музыканта {musician_name} не найден")
+            else:
+                print(f"Альбом {album_name} не найден")
+        else:
+            print(f"Музыкант {musician_name} не найден")
+
+
+def update_album(Session: sessionmaker):
+    with Session() as session:
+
+        attention = input('\nОбратите внимание, что если во время изменения данных об альбоме вы укажите несуществующего музыканта, произойдет ошибка и введенные данные не сохранятся.\nВведите 1, чтобы продолжить, или 2, чтобы вернуться назад\n')
+        if attention == '2':
+            start_menu(Session)
+
+        musician_name = input("\nВведите имя музыканта: ")
+        album_name = input("Введите название альбома: ")
+        album = None
+        
+        stmt = select(Musician).where(Musician.name == musician_name)
+        musician = session.scalars(stmt).first()
+
+        if musician is not None:
+            # если музыкант существует
+
+            for a in musician.albums:
+                if a.name == album_name:
+                    album = a
+            # находим альбом
+
+            if album is not None:
+                # если найденный альбом существует
+                new_album_name = input("\nВведите новое название альбома: ")
+                new_musician_name = input("Введите новое имя музыканта: ")
+
+                stmt = select(Musician).where(Musician.name == new_musician_name)
+                new_musician = session.scalars(stmt).first()
+
+                if new_musician is not None:
+
+                    album.name=new_album_name
+                    album.musician_id=new_musician.id
+                    album.musician=new_musician
+                    
+                    if album.musician == new_musician:
+                        session.commit()
+
+                    stmt = select(Album).where(Album.name == new_album_name)
+                    album = session.scalars(stmt).first()
+
+                    if album is not None:
+                        print(f"\nАльбом {album.name} музыканта {album.musician.name} успешно обновлен")
+                else:
+                    print(f"Музыкант {new_musician_name} не найден")
+            else:
+                print(f"\nАльбом {album_name} музыканта {musician_name} не найден")
+        else:
+            print(f"Музыкант {musician_name} не найден")
+
+def update_musician(Session: sessionmaker):
     with Session() as session:
         name = input("\nВведите имя музыканта: ")
         stmt = select(Musician).where(Musician.name == name)
@@ -263,64 +333,121 @@ def upgrade_musician(Session: sessionmaker):
 
         if musician is not None:
             new_name = input("\nВведите новое имя музыканта: ")
-            musician.name = new_name
-            session.commit()
-
             stmt = select(Musician).where(Musician.name == new_name)
-            musician = session.scalars(stmt).first()
-            if musician is not None:
-                print(f"\nМузыкант {musician.name} успешно обновлен")
+            new_musician = session.scalars(stmt).first()
+            
+            if new_musician is None:
+
+                musician.name = new_name
+                session.commit()
+
+                if musician.name == new_name:
+                    print(f"\nМузыкант {musician.name} успешно обновлен")
+            else:
+                print(f"\nМузыкант с именем {new_name} уже есть в системе")
+        else:
+            print(f"\nМузыкант {musician.name} не найден")
 
 
 def delete_track(Session: sessionmaker):
     with Session() as session:
 
         track_name: str = input("\nВведите название трека: ")
-        musician_name: str = input("\nВведите имя музыканта: ")
-        album_name: str = input("\nВведите название альбома: ")
+        album_name: str = input("Введите название альбома: ")
+        musician_name: str = input("Введите имя музыканта: ")
+        
+        stmt = select(Musician).where(and_(Musician.name == musician_name))
+        musician = session.scalars(stmt).first()
+        album = None
+        track = None
 
-        stmt = select(Track).where(and_(Track.name == track_name, Track.musician.name == musician_name, Track.album.name == album_name))
-        track = session.scalars(stmt).first()
+        if musician is not None:
+            for a in musician.albums:
+                if a.name == album_name:
+                    album = a
 
-        if track is not None:
-            session.delete(track)
-            session.commit()
+            if album is not None:
+                for t in album.tracks:
+                    if t.name == track_name:
+                        track = t
+
+                if track is not None:
+                    session.delete(track)
+                    session.commit()
+                    print(f"Трек {track_name} успешно удален")
+
+                else:
+                    print(f"\nТрек {track_name} не найден")
+            else:
+                print(f"\nАльбом {album_name} не найден")
+        else:
+            print(f"\nМузыкант {musician_name} не найден")
 
 def delete_album(Session: sessionmaker):
     with Session() as session:
+        album = None
 
         album_name: str = input("\nВведите название альбома: ")
-        musician_name: str = input("\nВведите имя музыканта: ")
-        
-        stmt = select(Album).where(and_(Album.name == album_name, Album.musician.name == musician_name))
-        album = session.scalars(stmt).first()
+        musician_name: str = input("Введите имя музыканта: ")
 
-        if album is not None:
-            session.delete(album)
-            session.commit()
+        stmt = select(Musician).where(Musician.name == musician_name)
+        musician = session.scalars(stmt).first()
+
+        if musician is not None:
+            for a in musician.albums:
+                if a.name == album_name:
+                    album = a
+
+            if album is not None:
+                for track in album.tracks:
+                    session.delete(track)
+                session.delete(album)
+                session.commit()
+                print(f"Альбом {album_name} успешно удален")
+                
+            else:
+                print(f"\nАльбом {album_name} не найден")
+        else:
+            print(f"\nМузыкант {musician_name} не найден")
 
 def delete_musician(Session: sessionmaker):
     with Session() as session:
 
         musician_name: str = input("\nВведите имя музыканта: ")
         
-        stmt = select(Musician).where(and_(Musician.name == musician_name))
+        stmt = select(Musician).where(Musician.name == musician_name)
         musician = session.scalars(stmt).first()
 
         if musician is not None:
+
+            for album in musician.albums:
+                for track in album.tracks:
+                    session.delete(track)
+                session.delete(album)
             session.delete(musician)
             session.commit()
+
+            stmt = select(Musician).where(Musician.name == musician_name)
+            musician = session.scalars(stmt).first()
+
+            if musician is None:
+                print(f"\nМузыкант {musician_name} успешно удален")
+
+        else:
+            print(f"\nМузыкант {musician_name} не найден")
+
 
 
 
 def main():
-    engine = create_engine("sqlite:///music_collection.db")
+    engine = create_engine("sqlite:///m_c.db")
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
 
     while 1:
         start_menu(Session)
         exit()
+
 
 
 def start_menu(Session):
@@ -341,7 +468,7 @@ def start_menu(Session):
         start_menu(Session)
     
     elif uc == '3':
-        upgrade_menu_func(Session)
+        update_menu_func(Session)
         start_menu(Session)
     
     elif uc == '4':
@@ -412,24 +539,24 @@ def show_menu_func(Session):
     elif uc == '7':
         start_menu(Session)
 
-def upgrade_menu_func(Session):
-    upgrade_menu = """\n\n1. Изменить данные о треке
+def update_menu_func(Session):
+    update_menu = """\n\n1. Изменить данные о треке
 2. Изменить данные об альбоме
 3. Изменить данные о музыканте
 4. Назад\n
 Выберите команду: """
 
-    uc = input(upgrade_menu)
+    uc = input(update_menu)
     if uc == '1':
-        upgrade_track(Session)
+        update_track(Session)
         start_menu(Session)
 
     elif uc == '2':
-        upgrade_album(Session)
+        update_album(Session)
         start_menu(Session)
     
     elif uc == '3':
-        upgrade_musician(Session)
+        update_musician(Session)
         start_menu(Session)
 
     elif uc == '4':
